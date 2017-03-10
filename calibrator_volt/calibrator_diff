@@ -1,0 +1,97 @@
+diff --git a/tools/calibrator/Makefile b/tools/calibrator/Makefile
+index 15bf51c..8ac6781 100644
+--- a/tools/calibrator/Makefile
++++ b/tools/calibrator/Makefile
+@@ -36,7 +36,8 @@ INCLUDES = -I. -I.. $(EEPROM_INCLUDES) $(GAINOFF_INCLUDES) -I$(INSTRUMENT_BASEDI
+ 
+ OBJS = calibrator.o
+ 
+-all: calibrator test
++#all: calibrator test
++all: calibrator 
+ 
+ test:
+ 	make INSTRUMENT_BASEDIR="../$(INSTRUMENT_BASEDIR)" -C ./tests test
+diff --git a/tools/calibrator/calibrator.c b/tools/calibrator/calibrator.c
+index d04582c..9f31a54 100644
+--- a/tools/calibrator/calibrator.c
++++ b/tools/calibrator/calibrator.c
+@@ -141,6 +141,9 @@ static float x_current[] = { 0.2f, 1.0f };
+ static float rms[NUM_ANALOG_PER_SLOT];
+ static int board_bom;
+ 
++// XXX
++static  dr60_pa8_info_t gainoff_old;
++
+ // Private Functions //////////////////////////////////////////////////////////
+ 
+ static void usage(char *program_name)
+@@ -294,10 +297,18 @@ static int calibrator_calc_gainoff(calibrator_t *calibrator, float y[2][NUM_ANAL
+     offsets[CURRENT_SLOT + i] = x_current[1] - y[1][CURRENT_SLOT + i] * gains[CURRENT_SLOT + i];
+   }
+ 
++  // Technical Maneuver - Use previously calibrated values for current channels 
++  for (i = 0; i < 4; i++) {
++    calibrator->dr60_pa8_info.gain[i]   = gainoff_old.gain[i];
++    calibrator->dr60_pa8_info.offset[i] = gainoff_old.offset[i];
++  }
++
+   for (i = 0; i < NUM_ANALOG_PER_SLOT; i++) {
+ 
+-    calibrator->dr60_pa8_info.gain[i] = (uint16_t)(gains[i] * 0x8000);
+-    calibrator->dr60_pa8_info.offset[i] = (int16_t)round(offsets[i] * calibrator->inverse_coeficients[i]);
++    if (i >= 4 ) {
++      calibrator->dr60_pa8_info.gain[i] = (uint16_t)(gains[i] * 0x8000);
++      calibrator->dr60_pa8_info.offset[i] = (int16_t)round(offsets[i] * calibrator->inverse_coeficients[i]);
++    }
+ 
+     if ((calibrator->dr60_pa8_info.gain[i] > MAX_GAIN)
+         || (calibrator->dr60_pa8_info.gain[i] < MIN_GAIN)
+@@ -374,6 +385,11 @@ int main(int argc, char **argv)
+     return -1;
+   }
+ 
++  if (boardinfo_specific_read(i2c_files[calibrator.board], &gainoff_old, sizeof(gainoff_old)) == RW_ERR) {
++    printf("Error reading gain and offset: %s", i2c_files[calibrator.board]);
++    return -1;
++  }
++
+   if (calibrator_set_default_gainoff(&calibrator) < 0) {
+     printf("%s Error set default gain.\n", LOG_IDENTIFICATION);
+     return -1;
+@@ -436,8 +452,7 @@ int main(int argc, char **argv)
+ 
+       case WAITING1:
+ 
+-        if (fabs(rms[VOLTAGE_OFFSET(0)] - x_voltage[0]) < error_x0[board_bom][1] &&
+-            fabs(rms[CURRENT_OFFSET(0)] - x_current[0]) < error_x0[board_bom][0]) {
++        if (fabs(rms[VOLTAGE_OFFSET(0)] - x_voltage[0]) < error_x0[board_bom][1]) { 
+           wait_counter++;
+         }
+         else {
+@@ -453,6 +468,7 @@ int main(int argc, char **argv)
+ 
+         for (i = 0; i < NUM_ANALOG_PER_SLOT; i++) {
+           y[0][i] = rms[i];
++printf("LOW - ch[%i] = %f\n", i, rms[i]);
+         }
+         state = SEARCHING2;
+         break;
+@@ -466,8 +482,7 @@ int main(int argc, char **argv)
+ 
+       case WAITING2:
+ 
+-        if (fabs(rms[VOLTAGE_OFFSET(0)] - x_voltage[1]) < error_x0[board_bom][1] &&
+-            fabs(rms[CURRENT_OFFSET(0)] - x_current[1]) < error_x0[board_bom][0]) {
++        if (fabs(rms[VOLTAGE_OFFSET(0)] - x_voltage[1]) < error_x0[board_bom][1]) {
+           wait_counter++;
+         }
+         else {
+@@ -483,6 +498,7 @@ int main(int argc, char **argv)
+ 
+         for (i = 0; i < NUM_ANALOG_PER_SLOT; i++) {
+           y[1][i] = rms[i];
++printf("HIGH - ch[%i] = %f\n", i, rms[i]);
+         }
+         state = FINISHED;
+ 

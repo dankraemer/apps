@@ -1,0 +1,4 @@
+Modified calibrator.
+This version will only calibrate the voltage channels in the analog boards.
+Previous calibration for current channels are preserved.
+
